@@ -1,0 +1,130 @@
+#----------------------------
+# General settings
+#----------------------------
+# specify full paths or relative paths from project root
+data_dir: data
+output_dir: output
+
+
+#----------------------------
+# Control area settings
+#----------------------------
+control_areas_year: 2026 # year for naming control and control_hct geography if it is being created
+nat_resource_sliver_buffer: 500 # buffer distance in feet for identifying slivers in natural resource areas
+rural_control_id_map: # Mapping of county FIPS codes to rural county control IDs.
+  '033': 64
+  '035': 76
+  '053': 124
+  '061': 176
+
+
+#----------------------------
+# Transit buffer settings
+#----------------------------
+hct_buffers:
+  brt: 1320
+  commuter_r: 2640
+  light_rail: 2640
+  ferry: 2640
+
+
+#----------------------------
+# Elmer settings
+#----------------------------
+# issues with pulling all columns from ElmerGeo, so columns need to be specified
+ElmerGeo: # database
+ - name: old_control_areas # name the table will be saved as in h5
+   sql_table: CONTROL18_DASHBOARD # table in elmer
+   columns: # columns to pull from elmer
+    - control_id
+    - control_na
+    - county_id
+   id_col: control_id # id column must be an integer
+
+ - name: parcel_pts_current
+   sql_table: PARCELS_URBANSIM_2023_PTS
+   columns:
+      - parcel_id
+   id_col: parcel_id # id column must be an integer
+
+ - name: regional_geographies
+   sql_table: REGIONAL_GEOGRAPHIES
+   columns: ['city_name','cnty_name','feat_type','juris','rgeo_class','class_desc']
+
+ - name: county
+   sql_table: COUNTY_BACKGROUND
+   columns: 
+    - county_fip
+    - psrc
+
+ - name: military_bases
+   sql_table: MILITARY_BASES
+   columns: ['milspn_id','name','psrc']
+
+ - name: tribal_land
+   sql_table: TRIBAL_LAND
+   columns: ['tribal_land']
+
+ - name: natural_resource
+   sql_table: NAT_RESOURCE
+   columns: ['resource']
+
+ - name: national_forest
+   sql_table: NATIONAL_FOREST
+   columns: ['forest_name']
+
+ - name: national_park
+   sql_table: NATIONAL_PARK
+   columns: ['park_name']
+
+ - name: hct_stops
+   sql_table: hct_vision_pts
+   columns: ['brt','commuter_r','light_rail','ferry', 'rural'] # binary columns for whether stop is that transit type  
+
+ - name: urban_centers
+   sql_table: urban_centers
+   columns: ['id', 'name'] 
+
+ - name: uga
+   sql_table: urban_growth_area 
+   columns: ['county_name']
+
+ - name: psrc_region
+   sql_table: psrc_region
+   columns: ['cnty_name', 'feat_type']
+
+
+#----------------------------
+# tables to be read in from data folder
+#----------------------------
+data_tables:
+ - name: control_target_xwalk
+   file: control_target_xwalk.csv
+
+ - name: regional_geographies_xwalk
+   file: regional_geographies_control_id_xwalk.csv
+
+ - name: military_bases_xwalk
+   file: military_bases_control_id_xwalk.csv
+
+
+#----------------------------
+# Output settings
+#----------------------------
+output_geodatabase: control.gdb # name of output geodatabase
+output_layers: # layers to be saved to output geodatabase
+ - control
+ - control_hct
+
+
+#----------------------------
+# Pypyr pipeline steps
+#----------------------------
+steps:
+  - steps.initialize_hdf5 # initializes hdf5 store, deleting existing if it exists
+  - steps.load_data # loads data from csv files into hdf5
+  - steps.get_elmer_data # pulls data from Elmer and saves to hdf5
+  - steps.create_control_geography # creates control geography and saves to hdf5
+  - steps.flag_hct_parcels
+  - steps.save_hct_shp
+  - steps.write_outputs 
