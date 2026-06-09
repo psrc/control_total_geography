@@ -10,12 +10,22 @@ output_dir: output
 # Control area settings
 #----------------------------
 control_areas_year: 2026 # year for naming control and control_hct geography if it is being created
+
 nat_resource_sliver_buffer: 500 # buffer distance in feet for identifying slivers in natural resource areas
-rural_control_id_map: # Mapping of county FIPS codes to rural county control IDs.
-  '033': 64
-  '035': 76
-  '053': 124
-  '061': 176
+
+jurisdictions_to_explode: # list of jurisdictions to explode into multiple control areas
+  - Renton PAA
+
+jblm_uga_control_id: 405 # control ID for JBLM UGA
+
+tribal_areas_keep: 
+  Tulalip Reservation: 210 # tribal area name from tribal_land and control id to assign to it
+
+nat_resource_county_map: # maps control id to the natural resource areas by county
+  '033': 301
+  '035': 302
+  '053': 303
+  '061': 304
 
 
 #----------------------------
@@ -46,10 +56,6 @@ ElmerGeo: # database
    columns:
       - parcel_id
    id_col: parcel_id # id column must be an integer
-
- - name: regional_geographies
-   sql_table: REGIONAL_GEOGRAPHIES
-   columns: ['city_name','cnty_name','feat_type','juris','rgeo_class','class_desc']
 
  - name: county
    sql_table: COUNTY_BACKGROUND
@@ -91,7 +97,8 @@ ElmerGeo: # database
 
  - name: psrc_region
    sql_table: psrc_region
-   columns: ['cnty_name', 'feat_type']
+   columns: ['juris','rgeo_class','class_desc','cnty_fips','cnty_name', 'feat_type']
+   juris_out_of_region: ['Out of Region','Thurston Co','Mason Co'] # values in the juris column that are out of the region
 
 
 #----------------------------

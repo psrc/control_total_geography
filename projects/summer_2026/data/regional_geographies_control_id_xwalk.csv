@@ -50,7 +50,7 @@ King_Renton,11,Renton
 King_Renton PAA,,
 King_Sammamish,42,Sammamish
 King_Sammamish PAA,61,Sammamish PAA
-King_Sea Tac,12,SeaTac
+King_SeaTac,12,SeaTac
 King_Seattle,2,Seattle
 King_Seattle PAA,20,North Highline
 King_Shoreline,25,Shoreline
@@ -78,6 +78,7 @@ Pierce_Bonney Lake PAA,107,Pierce UGA
 Pierce_Buckley,88,Buckley
 Pierce_Carbonado,89,Carbonado
 Pierce_Carbonado PAA,107,Pierce UGA
+Pierce_Dupont,82,DuPont
 Pierce_DuPont,82,DuPont
 Pierce_Eatonville,90,Eatonville
 Pierce_Eatonville PAA,107,Pierce UGA
@@ -162,3 +163,7 @@ Snohomish_Sultan,152,Sultan
 Snohomish_Sultan UGA,174,Sultan UGA
 Snohomish_Woodway,153,Woodway
 Snohomish_Woodway MUGA,175,Woodway MUGA
+King_King Rural,64,King Rural
+Kitsap_Kitsap Rural,76,Kitsap Rural
+Pierce_Pierce Rural,124,Pierce Rural
+Snohomish_Snohomish Rural,176,Snohomish Rural

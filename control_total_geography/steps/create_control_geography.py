@@ -74,6 +74,40 @@ def prepare_counties(pipeline):
     )
     return county[['control_id','geometry']]
 
+def prepare_psrc_region(pipeline):
+    p = pipeline
+    # get juris_out_of_region value from ElmerGeo[name=psrc_region]
+    for geo in p.settings['ElmerGeo']:
+        if geo['name'] == 'psrc_region':
+            juris_out_of_region = geo.get('juris_out_of_region', [])
+            break
+    reg = (
+    p.get_geodataframe('psrc_region')
+    .query("juris not in @juris_out_of_region")
+    )
+    print(f"loaded psrc_region, excluding out-of-region jurisdictions: {juris_out_of_region}")
+
+    reg_xwalk = p.get_table('regional_geographies_xwalk')
+    reg['reg_id'] = reg['cnty_name'] + '_' + reg['juris']
+    reg = reg.merge(reg_xwalk, on='reg_id', how='left')
+
+    EXPLODE_JURIS = p.settings.get('jurisdictions_to_explode')
+    # create new layer for jurisdictions that need to be exploded
+    exploded = reg.loc[reg['juris'].isin(EXPLODE_JURIS)][['geometry']].copy()
+    # remove exploded jurisdictions from reg
+    reg = reg.loc[~reg['juris'].isin(EXPLODE_JURIS)].copy()
+    # get control_ids for exploded jurisdictions by spatially joining with old control areas, then dissolve to assign control_ids
+    old = p.get_geodataframe('old_control_areas')
+    exploded = spatial_join_dissolve(exploded, old, 'control_id')
+    reg = pd.concat([reg, exploded], ignore_index=True)
+
+    if not reg.loc[reg['control_id'].isna()].empty:
+        raise ValueError(f"There are polygons in psrc_region that not have matching control_ids after "
+                        f"merge, check spelling of juris and reg_id in both psrc_region and regional_geographies_xwalk."
+                        f"Missing juris:{ reg.loc[reg['control_id'].isna(),'juris'].unique()}")
+    
+    reg = reg.dissolve(by='control_id', as_index=False)
+    return reg[['control_id','geometry']]
 
 def prepare_military_bases(pipeline):
     """Prepare military-base control area geometries.
@@ -114,39 +148,10 @@ def prepare_tribal_areas(pipeline):
     p = pipeline
     county = p.get_geodataframe('county')
     tribal = p.get_geodataframe('tribal_land').clip(county.dissolve())
-    tribal = tribal.loc[tribal.tribal_land=='Tulalip Reservation'].dissolve()
-    tribal['control_id'] = 210
+    tribal_areas_keep = p.settings['tribal_areas_keep']
+    tribal = tribal.loc[tribal['tribal_land'].isin(tribal_areas_keep.keys())].dissolve()
+    tribal['control_id'] = tribal['tribal_land'].map(tribal_areas_keep)
     return tribal[['control_id','geometry']]
-
-def prepare_regional_geographies(pipeline):
-    """Prepare regional-geography control area geometries.
-
-    Joins regional geographies with the crosswalk to assign control IDs,
-    then splits the Renton PAA into sub-areas using the old control areas
-    as a template.
-
-    Args:
-        pipeline (Pipeline): The data pipeline providing access to geodataframes
-            and stored tables.
-
-    Returns:
-        geopandas.GeoDataFrame: Regional geography polygons with
-            ``control_id``.
-    """
-    p = pipeline
-    reg = p.get_geodataframe('regional_geographies')
-    reg_xwalk = p.get_table('regional_geographies_xwalk')
-    reg['reg_id'] = reg['cnty_name'] + '_' + reg['juris']
-    reg = reg.merge(reg_xwalk, on='reg_id', how='left')
-    
-    # split Renton PAA into the 3 seperate control areas (using old control areas for now)
-    renton = reg.loc[reg['juris']=='Renton PAA'][['geometry']].copy()
-    reg = reg.loc[reg['juris']!='Renton PAA'].copy()
-    renton = renton.explode()
-    old = p.get_geodataframe('old_control_areas')
-    renton = spatial_join_dissolve(renton, old, 'control_id')
-    reg = pd.concat([reg, renton], ignore_index=True)
-    return reg[['control_id','geometry']]
 
 def prepare_natural_resource_areas(pipeline):
     """Prepare natural-resource control area geometries.
@@ -163,12 +168,7 @@ def prepare_natural_resource_areas(pipeline):
             ``control_id``.
     """
     p = pipeline
-    control_id_map = {
-        '033': 301,
-        '035': 302,
-        '053': 303,
-        '061': 304,
-    }
+    control_id_map = p.settings['nat_resource_county_map']
     county = p.get_geodataframe('county').query("psrc == 1")
     # bring in natural resource layers and combine
     nat_forest = p.get_geodataframe('national_forest').dissolve()
@@ -225,22 +225,23 @@ def run_step(context):
     """
     # pypyr step
     p = Pipeline(settings_path=context['configs_dir'])
-    print("Creating control area geography and saving to HDF5...")
-    
+    print("Creating control area geography...")
+
     # prepare all layers for unioning
-    counties = prepare_counties(p)
-    reg = prepare_regional_geographies(p)
+    reg = prepare_psrc_region(p)
     military = prepare_military_bases(p)
-    jblm_uga = reg.loc[reg['control_id'] == 405].copy()
+    jblm_uga_control_id = p.settings['jblm_uga_control_id']
+    jblm_uga = reg.loc[reg['control_id'] == jblm_uga_control_id].copy()
     tribal = prepare_tribal_areas(p)
-    nat_res = prepare_natural_resource_areas(p)
+    nat_res = prepare_natural_resource_areas(p) 
 
     # union all layers
-    gdf = union_dissolve(reg,counties,'control_id')
-    gdf = union_dissolve(military,gdf,'control_id')
+    gdf = union_dissolve(military,reg,'control_id')
     gdf = union_dissolve(jblm_uga,gdf,'control_id')
     gdf = union_dissolve(tribal,gdf,'control_id')
     gdf = union_dissolve(nat_res,gdf,'control_id')
+
+    print(f"Control area geography created with {len(gdf)} features.")
 
     # add control names and target ids
     xwalk = p.get_table('control_target_xwalk')
