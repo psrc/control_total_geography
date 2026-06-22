@@ -122,16 +122,20 @@ output_geodatabase: control.gdb # name of output geodatabase
 output_layers: # layers to be saved to output geodatabase
  - control
  - control_hct
+ - target
+ - cities
 
 
 #----------------------------
 # Pypyr pipeline steps
 #----------------------------
 steps:
-  - steps.initialize_hdf5 # initializes hdf5 store, deleting existing if it exists
-  - steps.load_data # loads data from csv files into hdf5
-  - steps.get_elmer_data # pulls data from Elmer and saves to hdf5
-  - steps.create_control_geography # creates control geography and saves to hdf5
-  - steps.flag_hct_parcels
-  - steps.save_hct_shp
+  # - steps.initialize_hdf5 # initializes hdf5 store, deleting existing if it exists
+  # - steps.load_data # loads data from csv files into hdf5
+  # - steps.get_elmer_data # pulls data from Elmer and saves to hdf5
+  # - steps.create_control_geography # creates control geography and saves to hdf5
+  # - steps.create_target_geography
+  - steps.create_cities_geography
+  # - steps.flag_hct_parcels
+  # - steps.save_hct_shp
   - steps.write_outputs 
