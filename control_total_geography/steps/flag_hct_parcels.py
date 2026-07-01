@@ -208,5 +208,6 @@ def run_step(context):
     # Persist flagged parcels and HCT buffer geometries to the pipeline
     p.save_geodataframe("parcels_hct", parcels)
     p.save_geodataframe("hct_buffers", hct_buffers)
+    p.save_table('parcels_control_hct', parcels.drop(columns=['geometry']))
 
     return context

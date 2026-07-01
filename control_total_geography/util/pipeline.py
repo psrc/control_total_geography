@@ -5,6 +5,12 @@ import os
 import geopandas as gpd
 from shapely.wkt import loads
 
+# pandas 3.0 defaults to pyarrow-backed string dtypes ("future.infer_string").
+# Parquet round-trips then hand geopandas ArrowDtype-backed string columns,
+# which triggers a memory-blowup bug in geopandas.sjoin's reindexing step.
+# Force classic numpy object-dtype strings to avoid that.
+pd.set_option('future.infer_string', False)
+
 class Pipeline:
     def __init__(self, settings_path='configs'):
         """
@@ -19,6 +25,7 @@ class Pipeline:
         # create data and output directories if they don't exist
         self.create_directory(path=self.get_data_path())
         self.create_directory(path=self.get_output_path())
+        self.create_directory(path=self.get_pipeline_path())
 
     def create_directory(self, path_parts: list=None, path: str=None) -> Path:
         """Create a directory if it doesn't exist."""
@@ -44,20 +51,21 @@ class Pipeline:
     def get_data_path(self, *path_parts):
         return self._resolve_workspace_path(self.settings.get('data_dir'), 'data').joinpath(*path_parts)
 
+    def get_pipeline_path(self, *path_parts):
+        return self._resolve_workspace_path(self.settings.get('pipeline_dir'), 'pipeline').joinpath(*path_parts)
+
     def get_output_path(self, *path_parts):
         return self._resolve_workspace_path(self.settings.get('output_dir'), 'output').joinpath(*path_parts)
     
-    def get_hdf5_path(self):
-        return self.get_output_path('pipeline.h5')
+    def get_table_path(self, table_name):
+        return self.get_pipeline_path(f'{table_name}.parquet')
 
     def save_table(self, table_name, df):
-        print(f"Saving table {table_name} to HDF5 store...")
-        with pd.HDFStore(self.get_hdf5_path(), mode='a') as h5store:
-            h5store.put(table_name, df, format='table')
+        print(f"Saving table {table_name} to pipeline...")
+        df.to_parquet(self.get_table_path(table_name))
 
     def get_table(self, table_name):
-        with pd.HDFStore(self.get_hdf5_path(), mode='r') as h5store:
-            return h5store.get(table_name)
+        return pd.read_parquet(self.get_table_path(table_name))
 
     def save_geodataframe(self, name, gdf):
         gdf['geometry_wkt'] = gdf.geometry.to_wkt()

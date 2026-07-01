@@ -26,7 +26,7 @@ def copy_elmer_geo_to_hdf5(pipeline):
             pipeline.save_geodataframe(file['name'], gdf)
 
 def copy_elmer_to_hdf5(pipeline):
-    """Copy tabular data from Elmer into the pipeline HDF5 store.
+    """Copy tabular data from Elmer into the pipeline.
 
     Iterates over the ``Elmer`` table list in settings, reads each table
     from the Elmer SQL server, converts the ID column to int64, and saves
@@ -64,8 +64,6 @@ def run_step(context):
     """
     # pypyr step
     p = Pipeline(settings_path=context['configs_dir'])
-    print("Getting ElmerGeo data and saving to HDF5...")
+    print("Getting ElmerGeo data and saving to pipeline...")
     copy_elmer_geo_to_hdf5(p)
-    # print("Getting Elmer data and saving to HDF5...")
-    # copy_elmer_to_hdf5(p)
     return context
