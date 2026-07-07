@@ -4,7 +4,7 @@
 # specify full paths or relative paths from project root
 data_dir: data
 pipeline_dir: pipeline
-output_dir: Q:/Projects/2023_Baseyear/Political
+output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
 
 
 #----------------------------

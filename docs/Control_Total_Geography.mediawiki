@@ -1,0 +1,295 @@
+= Control Total Geography Pipeline =
+
+This page documents the [https://github.com/psrc/control_total_geography control_total_geography] repository, which builds the '''control''' and '''control_hct''' spatial layers used as the geographic foundation for PSRC's control totals process. The pipeline also produces '''target''' and '''cities''' geography layers and flags parcels by transit-oriented development (TOD) category. It is configured via <code>settings.yaml</code> and executed as a series of ordered [https://pypyr.io/ pypyr] steps.
+
+== Overview ==
+
+The pipeline follows six phases:
+
+# '''Data Loading''' — Load CSV crosswalks from the <code>data/</code> folder and pull geospatial feature classes from PSRC's ElmerGeo database into a local pipeline cache.
+# '''Control Geography Creation''' — Union PSRC regional geography (jurisdictions/UGAs), military bases, tribal land, and natural resource areas into a single set of control area polygons, each with a unique <code>control_id</code>.
+# '''Target & Cities Geography''' — Dissolve control areas up to target areas (for growth-target aggregation) and extract a separate cities layer with a parcel–city crosswalk.
+# '''Parcel HCT/TOD Flagging''' — Flag every parcel as rural, urban center, and/or within a high-capacity-transit (HCT) stop buffer, then assign a TOD code and a <code>control_hct_id</code>.
+# '''Control HCT Geography''' — Dissolve flagged parcel polygons by <code>control_id</code>/<code>control_hct_id</code> to build the <code>control_hct</code> layer (control areas split into HCT / non-HCT sub-areas).
+# '''Output Export''' — Write the final geography layers and tables from the pipeline cache to a file geodatabase and CSV files.
+
+=== Data Flow Diagram ===
+
+<pre>
+┌────────────────┐        ┌───────────────────┐
+│   data/*.csv    │───────▶│  load_data         │
+└────────────────┘        └─────────┬──────────┘
+                                     │
+┌────────────────┐        ┌─────────▼──────────┐
+│  ElmerGeo (SQL) │───────▶│  get_elmer_data     │
+└────────────────┘        └─────────┬──────────┘
+                                     │ pipeline cache (parquet + WKT)
+                                     ▼
+                     ┌───────────────────────────────┐
+                     │  create_control_geography      │
+                     │  • psrc_region (juris/UGA)      │
+                     │  • military_bases                │
+                     │  • tribal_land                    │
+                     │  • natural_resource/forest/park    │
+                     └───────────────┬───────────────┘
+                                     │ control (control_id)
+                     ┌───────────────┴───────────────┐
+                     ▼                                 ▼
+         ┌────────────────────┐            ┌───────────────────────┐
+         │ create_target_geography │        │ create_cities_geography │
+         └────────────────────┘            └───────────────────────┘
+                     │ target                          │ cities, parcels_cities
+                     ▼
+         ┌─────────────────────────┐
+         │ flag_hct_parcels         │
+         │ • rural / urban_center     │
+         │ • brt/commuter_r/light_rail/ferry buffers │
+         │ • TOD code + control_hct_id │
+         └───────────┬─────────────┘
+                     │ parcels_hct, parcels_control_hct
+                     ▼
+         ┌─────────────────────────┐
+         │ save_hct_shp             │
+         │ dissolve parcels by       │
+         │ control_id/control_hct_id  │
+         └───────────┬─────────────┘
+                     │ control_hct
+                     ▼
+         ┌─────────────────────────┐
+         │ write_outputs             │
+         │ export layers to .gdb,     │
+         │ tables to .csv               │
+         └─────────────────────────┘
+</pre>
+
+== Configuration ==
+
+Key settings from <code>settings.yaml</code>:
+
+{| class="wikitable"
+! Setting !! Example Value !! Description
+|-
+| <code>data_dir</code> || <code>data</code> || Folder (relative to configs dir) containing input CSV crosswalks
+|-
+| <code>pipeline_dir</code> || <code>pipeline</code> || Folder where intermediate parquet tables are cached between steps
+|-
+| <code>output_dir</code> || <code>Q:/Projects/.../control_geographies</code> || Folder where the final geodatabase and CSVs are written
+|-
+| <code>control_areas_year</code> || 2026 || Year used to suffix output layer names (e.g. <code>control26</code>)
+|-
+| <code>nat_resource_sliver_buffer</code> || 500 || Buffer distance (feet) used to snap small sliver polygons back into natural resource areas
+|-
+| <code>jurisdictions_to_explode</code> || <code>[Renton PAA]</code> || Jurisdictions that must be split into multiple control areas rather than kept as one polygon
+|-
+| <code>jblm_uga_control_id</code> || 405 || Control ID for the JBLM (Joint Base Lewis-McChord) UGA, carved out before the military-base union
+|-
+| <code>tribal_areas_keep</code> || <code>{Tulalip Reservation: 210}</code> || Tribal areas to retain as their own control area, mapped to a control ID
+|-
+| <code>nat_resource_county_map</code> || <code>{'033': 301, ...}</code> || Maps county FIPS to the control ID used for that county's natural resource area
+|-
+| <code>hct_buffers</code> || <code>{brt: 1320, commuter_r: 2640, light_rail: 2640, ferry: 2640}</code> || Buffer distance (feet) around each HCT stop type used for parcel flagging
+|-
+| <code>ElmerGeo</code> || — || List of ElmerGeo/Elmer tables to pull, each with a <code>name</code>, <code>sql_table</code>, <code>columns</code>, and optional <code>id_col</code>
+|-
+| <code>data_tables</code> || — || List of local CSV crosswalks to load, each with a <code>name</code> and <code>file</code>
+|-
+| <code>output_geodatabase</code> || <code>control.gdb</code> || File geodatabase name for exported layers
+|-
+| <code>output_layers</code> || <code>[control, control_hct, target, cities]</code> || Geodataframe layers exported to the output geodatabase
+|-
+| <code>output_tables</code> || <code>[parcels_control_hct, parcels_cities]</code> || Tabular outputs exported to CSV
+|-
+| <code>steps</code> || — || Ordered list of pypyr step modules that make up the pipeline
+|}
+
+=== ElmerGeo / Elmer Sources ===
+
+{| class="wikitable"
+! Pipeline Name !! SQL Table !! Description
+|-
+| <code>old_control_areas</code> || <code>CONTROL18_DASHBOARD</code> || Prior control-area boundaries, used to reassign <code>control_id</code> for exploded jurisdictions
+|-
+| <code>parcel_pts_current</code> || <code>PARCELS_URBANSIM_2023_PTS</code> || Current parcel point centroids
+|-
+| <code>county</code> || <code>COUNTY_BACKGROUND</code> || County boundaries, filtered to PSRC's four counties (<code>psrc == 1</code>)
+|-
+| <code>military_bases</code> || <code>MILITARY_BASES</code> || Military installation polygons
+|-
+| <code>tribal_land</code> || <code>TRIBAL_LAND</code> || Tribal reservation polygons
+|-
+| <code>natural_resource</code> || <code>NAT_RESOURCE</code> || Natural resource area polygons
+|-
+| <code>national_forest</code> || <code>NATIONAL_FOREST</code> || National forest polygons
+|-
+| <code>national_park</code> || <code>NATIONAL_PARK</code> || National park polygons
+|-
+| <code>hct_stops</code> || <code>hct_vision_pts</code> || HCT stop points with binary columns for <code>brt</code>, <code>commuter_r</code>, <code>light_rail</code>, <code>ferry</code>, <code>rural</code>
+|-
+| <code>urban_centers</code> || <code>urban_centers</code> || Regional urban center polygons
+|-
+| <code>uga</code> || <code>urban_growth_area</code> || Urban growth area polygons
+|-
+| <code>psrc_region</code> || <code>psrc_region</code> || Jurisdiction/UGA polygons with <code>juris</code>, <code>rgeo_class</code>, <code>feat_type</code>, county FIPS/name
+|}
+
+----
+
+== Phase 1: Data Loading ==
+
+=== Step 1: Load Data ===
+
+<code>control_total_geography.steps.load_data</code>
+
+Reads each CSV listed under <code>data_tables</code> in settings (<code>control_target_xwalk</code>, <code>regional_geographies_xwalk</code>, <code>military_bases_xwalk</code>) from the <code>data/</code> folder into a <code>pandas.DataFrame</code> and saves it to the pipeline cache as a parquet file.
+
+=== Step 2: Get Elmer Data ===
+
+<code>control_total_geography.steps.get_elmer_data</code>
+
+Connects to PSRC's '''ElmerGeo''' SQL Server database (VPN required) and, for every entry in the <code>ElmerGeo</code> settings list, reads the named feature class/columns, converts the configured <code>id_col</code> to <code>int64</code>, and saves the result as a geodataframe in the pipeline cache. (An analogous <code>Elmer</code> tabular loader also exists but is unused while the <code>Elmer</code> settings list is empty.)
+
+----
+
+== Phase 2: Control Geography Creation ==
+
+=== Step 3: Create Control Geography ===
+
+<code>control_total_geography.steps.create_control_geography</code>
+
+Builds the <code>control</code> layer by preparing and unioning several polygon layers, each keyed by <code>control_id</code>:
+
+# '''<code>prepare_psrc_region</code>''' — Filters <code>psrc_region</code> to in-region jurisdictions, joins to <code>regional_geographies_xwalk</code> on <code>county + juris</code> to get a <code>control_id</code>. Jurisdictions listed in <code>jurisdictions_to_explode</code> are split out, spatially joined to <code>old_control_areas</code> (<code>CONTROL18_DASHBOARD</code>), and dissolved back in so they can be split into multiple control areas instead of one.
+# '''<code>prepare_military_bases</code>''' — Dissolves military base polygons by installation, joins to <code>military_bases_xwalk</code> to get <code>control_id</code>, and clips to the PSRC counties.
+# '''<code>jblm_uga</code>''' — The JBLM UGA polygon is pulled out of the regional layer using the configured <code>jblm_uga_control_id</code> so it can be layered separately on top of the military-base union.
+# '''<code>prepare_tribal_areas</code>''' — Clips <code>tribal_land</code> to the PSRC counties, keeps only the areas listed in <code>tribal_areas_keep</code>, and assigns their configured <code>control_id</code>.
+# '''<code>prepare_natural_resource_areas</code>''' — Combines national forest, national park, and natural resource polygons, clips to PSRC counties, and (per county) merges small sliver polygons that fall within <code>nat_resource_sliver_buffer</code> feet of a resource polygon back into the resource area so they aren't left as tiny orphan control areas. Assigns <code>control_id</code> using <code>nat_resource_county_map</code>.
+
+These layers are combined with repeated calls to <code>union_dissolve</code> (regional ∪ military → ∪ JBLM UGA → ∪ tribal → ∪ natural resource), which overlays two layers, fills missing IDs from the secondary layer, and dissolves by ID so the result has exactly one polygon per <code>control_id</code>. Finally, <code>control_target_xwalk</code> is merged in to attach <code>target_id</code>, <code>target_name</code>, <code>county_id</code>, and <code>exclude_from_target</code>.
+
+Output: <code>control</code> geodataframe (columns: <code>control_id</code>, <code>control_name</code>, <code>target_id</code>, <code>target_name</code>, <code>county_id</code>, <code>exclude_from_target</code>, <code>geometry</code>).
+
+----
+
+== Phase 3: Target & Cities Geography ==
+
+=== Step 4: Create Target Geography ===
+
+<code>control_total_geography.steps.create_target_geography</code>
+
+Dissolves the <code>control</code> layer by <code>target_id</code>/<code>target_name</code>, dropping the now-irrelevant <code>control_id</code>/<code>control_name</code>/<code>exclude_from_target</code> columns. Target areas group one or more control areas together and are the level at which county growth targets are later assigned in the downstream control-totals process.
+
+Output: <code>target</code> geodataframe.
+
+=== Step 5: Create Cities Geography ===
+
+<code>control_total_geography.steps.create_cities_geography</code>
+
+Filters <code>psrc_region</code> to features where <code>feat_type == 'city'</code>, sorts by county/jurisdiction, and assigns a sequential <code>city_id</code>. Also spatially joins current parcel points to the cities layer to build a <code>parcels_cities</code> crosswalk table (<code>parcel_id</code>, <code>city_id</code>, <code>juris</code>, <code>rgeo_class</code>, <code>cnty_fips</code>, <code>cnty_name</code>).
+
+Outputs: <code>cities</code> geodataframe, <code>parcels_cities</code> table.
+
+----
+
+== Phase 4: Parcel HCT/TOD Flagging ==
+
+=== Step 6: Flag HCT Parcels ===
+
+<code>control_total_geography.steps.flag_hct_parcels</code>
+
+For every current parcel point:
+
+# '''<code>flag_rural_parcels</code>''' — Flags parcels that intersect the <code>rural</code> feature type in <code>psrc_region</code>.
+# '''<code>flag_urban_center_parcels</code>''' — Flags parcels that intersect an <code>urban_centers</code> polygon.
+# '''<code>flag_hct_parcels</code>''' — For each transit type in <code>hct_buffers</code> (<code>brt</code>, <code>commuter_r</code>, <code>light_rail</code>, <code>ferry</code>), buffers the non-rural <code>hct_stops</code> of that type by the configured distance and flags parcels that fall within the buffer.
+# '''TOD code assignment''' — A single <code>tod</code> code is derived from the boolean flags, applied in priority order (later overrides earlier): default 0 → <code>urban_center</code> → 6 → <code>brt</code> → 1 → <code>ferry</code> → 5 → <code>commuter_r</code> → 2 → <code>light_rail</code> → 4 → <code>rural</code> → 0 (rural always wins).
+# '''<code>assign_ids</code>''' — Spatially joins parcels to the <code>control</code> layer to get <code>control_id</code> (falling back to <code>sjoin_nearest</code> for any unmatched parcels), then derives <code>control_hct_id</code> = <code>control_id</code> + 1000 for parcels with a non-zero <code>tod</code> code, and sets <code>subreg_id</code> = <code>control_hct_id</code>.
+
+{| class="wikitable"
+! TOD Code !! Category
+|-
+| 0 || Non-HCT / rural (or none of the below)
+|-
+| 1 || BRT
+|-
+| 2 || Commuter rail
+|-
+| 4 || Light rail
+|-
+| 5 || Ferry
+|-
+| 6 || Urban center
+|}
+
+Outputs: <code>parcels_hct</code> (all flags + geometry), <code>hct_buffers</code> (buffered stop polygons), <code>parcels_control_hct</code> (tabular parcel/control/TOD crosswalk, no geometry).
+
+----
+
+== Phase 5: Control HCT Geography ==
+
+=== Step 7: Save HCT Shapefile ===
+
+<code>control_total_geography.steps.save_hct_shp</code>
+
+Reads full parcel '''polygons''' directly from ElmerGeo (<code>PARCELS_URBANSIM_2023</code>, read straight from the database rather than the pipeline cache because the layer is too large to store efficiently), merges in each parcel's <code>control_id</code>/<code>control_hct_id</code> from <code>parcels_hct</code>, and dissolves by <code>(control_id, control_hct_id)</code> to build one polygon per control/HCT sub-area. Control names are merged back in and columns are renamed to <code>chct_id</code>/<code>chct_name</code>.
+
+Output: <code>control_hct</code> geodataframe — the <code>control</code> layer split into HCT and non-HCT sub-areas.
+
+----
+
+== Phase 6: Output Export ==
+
+=== Step 8: Write Outputs ===
+
+<code>control_total_geography.steps.write_outputs</code>
+
+For each layer in <code>output_layers</code> (<code>control</code>, <code>control_hct</code>, <code>target</code>, <code>cities</code>), reads the geodataframe from the pipeline cache and exports it to <code>output_geodatabase</code> (default <code>control.gdb</code>) in the configured <code>output_dir</code>, with the layer name suffixed by the last two digits of <code>control_areas_year</code> (e.g. <code>control26</code>). For each table in <code>output_tables</code> (<code>parcels_control_hct</code>, <code>parcels_cities</code>), exports the table to a CSV file of the same name.
+
+----
+
+== Pipeline Step Summary ==
+
+{| class="wikitable"
+! # !! Step Module !! Phase !! Description
+|-
+| 1 || <code>steps.load_data</code> || Data Loading || Load CSV crosswalks from <code>data/</code> into the pipeline cache
+|-
+| 2 || <code>steps.get_elmer_data</code> || Data Loading || Fetch geospatial feature classes from ElmerGeo
+|-
+| 3 || <code>steps.create_control_geography</code> || Control Geography || Union regional, military, tribal, and natural resource layers into <code>control</code>
+|-
+| 4 || <code>steps.create_target_geography</code> || Target/Cities || Dissolve control areas up to target areas
+|-
+| 5 || <code>steps.create_cities_geography</code> || Target/Cities || Extract city polygons and build parcel–city crosswalk
+|-
+| 6 || <code>steps.flag_hct_parcels</code> || Parcel Flagging || Flag parcels rural/urban center/HCT buffer, assign TOD code and <code>control_hct_id</code>
+|-
+| 7 || <code>steps.save_hct_shp</code> || Control HCT Geography || Dissolve parcel polygons by control/HCT ID into <code>control_hct</code>
+|-
+| 8 || <code>steps.write_outputs</code> || Output Export || Export layers to file geodatabase and tables to CSV
+|}
+
+----
+
+== Key Concepts ==
+
+=== Control Areas ===
+The fundamental geographic unit for this pipeline. Each control area has a unique <code>control_id</code> and is built by unioning PSRC jurisdiction/UGA boundaries with military bases, tribal land, and natural resource areas so that every acre in the region is covered by exactly one control area.
+
+=== Control HCT ===
+A finer split of each control area into an HCT (high-capacity-transit-served) sub-area and a non-HCT sub-area, identified by <code>control_hct_id</code> = <code>control_id</code> + 1000. Built by dissolving parcel polygons according to each parcel's TOD flag.
+
+=== Target Areas ===
+Groups of one or more control areas, identified by <code>target_id</code>. This is the level at which county growth targets are assigned in the downstream control-totals process (see the [https://github.com/psrc/control_totals control_totals] repository).
+
+=== Pipeline Cache ===
+The <code>util.Pipeline</code> class provides a lightweight persistence layer: tables are saved as parquet files under <code>pipeline_dir</code>; geodataframes are saved the same way with geometry serialized to a WKT text column (<code>geometry_wkt</code>) and rehydrated with <code>shapely.wkt.loads</code> on read.
+
+=== Jurisdictions to Explode ===
+Some jurisdictions (e.g. Renton PAA) need to be split into more than one control area. These are pulled out of the regional layer, spatially joined to the prior year's control areas (<code>CONTROL18_DASHBOARD</code>) to inherit multiple <code>control_id</code>s, and dissolved back in.
+
+=== Natural Resource Slivers ===
+When natural resource/forest/park polygons are overlaid with county boundaries, small sliver polygons can result along the edges. The pipeline buffers the resource polygons by <code>nat_resource_sliver_buffer</code> feet and merges any unlabeled slivers whose representative point falls in that buffer back into the resource area, so they aren't left as separate tiny control areas.
+
+[[Category:Control Totals]]
+[[Category:Control Total Geography]]
+[[Category:PSRC Planning Tools]]
