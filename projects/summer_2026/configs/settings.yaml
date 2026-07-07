@@ -28,6 +28,15 @@ nat_resource_county_map: # maps control id to the natural resource areas by coun
   '053': 303
   '061': 304
 
+# list of rural control ids that should not have transit buffers applied, in addition to
+# the natural resource and tribal areas
+rural_control_ids: 
+  - 64 # King rural
+  - 76 # Kitsap rural
+  - 124 # Pierce rural
+  - 176 # Snohomish rural
+  - 403 # JBLM - Rural
+
 
 #----------------------------
 # Transit buffer settings
@@ -135,11 +144,11 @@ output_tables: # tables to be saved to output folder
 # Pypyr pipeline steps
 #----------------------------
 steps:
-  - steps.load_data # loads data from csv files to pipeline
-  - steps.get_elmer_data # pulls data from Elmer and saves to pipeline
-  - steps.create_control_geography # creates control geography and saves to pipeline
-  - steps.create_target_geography
-  - steps.create_cities_geography
+  # - steps.load_data # loads data from csv files to pipeline
+  # - steps.get_elmer_data # pulls data from Elmer and saves to pipeline
+  # - steps.create_control_geography # creates control geography and saves to pipeline
+  # - steps.create_target_geography
+  # - steps.create_cities_geography
   - steps.flag_hct_parcels
   - steps.save_hct_shp
   - steps.write_outputs 
