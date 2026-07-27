@@ -136,7 +136,7 @@ output_layers: # layers to be saved to output geodatabase
  - cities
 
 output_tables: # tables to be saved to output folder
- - parcels_control_hct # very slow
+ - parcels_control_hct_xwalk # very slow
  - parcels_cities # very slow
 
 
@@ -149,6 +149,7 @@ steps:
   # - steps.create_control_geography # creates control geography and saves to pipeline
   # - steps.create_target_geography
   # - steps.create_cities_geography
-  - steps.flag_hct_parcels
-  - steps.save_hct_shp
+  # - steps.flag_hct_parcels
+  # - steps.save_hct_shp
+  - steps.create_parcel_control_hct_xwalk
   - steps.write_outputs 
