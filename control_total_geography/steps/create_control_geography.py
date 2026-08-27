@@ -106,6 +106,8 @@ def prepare_psrc_region(pipeline):
                         f"merge, check spelling of juris and reg_id in both psrc_region and regional_geographies_xwalk."
                         f"Missing juris:{ reg.loc[reg['control_id'].isna(),'juris'].unique()}")
     
+    # repair invalid input geometry to avoid GEOS TopologyExceptions during dissolve
+    reg['geometry'] = reg['geometry'].make_valid()
     reg = reg.dissolve(by='control_id', as_index=False)
     return reg[['control_id','geometry']]
 

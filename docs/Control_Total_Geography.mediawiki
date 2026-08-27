@@ -282,7 +282,7 @@ A finer split of each control area into an HCT (high-capacity-transit-served) su
 Groups of one or more control areas, identified by <code>target_id</code>. This is the level at which county growth targets are assigned in the downstream control-totals process (see the [https://github.com/psrc/control_totals control_totals] repository).
 
 === Pipeline Cache ===
-The <code>util.Pipeline</code> class provides a lightweight persistence layer: tables are saved as parquet files under <code>pipeline_dir</code>; geodataframes are saved the same way with geometry serialized to a WKT text column (<code>geometry_wkt</code>) and rehydrated with <code>shapely.wkt.loads</code> on read.
+The <code>util.Pipeline</code> class provides a lightweight persistence layer: tables are saved as parquet files under <code>pipeline_dir</code>; geodataframes are saved the same way using geopandas' native GeoParquet support, which preserves the CRS in the file metadata so it round-trips correctly on read instead of being reassigned a default.
 
 === Jurisdictions to Explode ===
 Some jurisdictions (e.g. Renton PAA) need to be split into more than one control area. These are pulled out of the regional layer, spatially joined to the prior year's control areas (<code>CONTROL18_DASHBOARD</code>) to inherit multiple <code>control_id</code>s, and dissolved back in.

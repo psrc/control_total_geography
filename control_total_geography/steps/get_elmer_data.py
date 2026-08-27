@@ -1,5 +1,8 @@
-from control_total_geography.util.elmer_helpers import read_from_elmer_geo, read_from_elmer
+from control_total_geography.util.elmer_helpers import read_from_elmer_geo, read_from_elmer, patch_psrcelmerpy_trust_server_certificate
 from control_total_geography.util import Pipeline
+import psrcelmerpy
+
+#patch_psrcelmerpy_trust_server_certificate()
 
 
 def copy_elmer_geo_to_hdf5(pipeline):
@@ -15,9 +18,11 @@ def copy_elmer_geo_to_hdf5(pipeline):
     """
     # loop through ElmerGeo files specified in settings.yaml
     elmer_geo_list = pipeline.settings.get('ElmerGeo', [])
+    eg_conn = psrcelmerpy.ElmerGeoConn()
     if elmer_geo_list:
         for file in elmer_geo_list:
-            gdf = read_from_elmer_geo(file['sql_table'],file['columns'])
+            gdf = eg_conn.read_geolayer(file['sql_table'])
+            gdf = gdf[file['columns'] + [gdf._geometry_column_name]]
             
             # convert id column to int64
             gdf = pipeline.convert_id_to_int64(file, gdf)
@@ -38,9 +43,10 @@ def copy_elmer_to_hdf5(pipeline):
     """
     # loop through Elmer tables specified in settings.yaml unless it's empty
     elmer_list = pipeline.settings.get('Elmer', [])
+    e_conn = psrcelmerpy.ElmerConn()
     if elmer_list:
         for table in elmer_list:
-            df = read_from_elmer(table['sql_table'],['*'])
+            df = e_conn.read_table(table['sql_table'], ['*'])
             
             # convert id column to int64
             df = pipeline.convert_id_to_int64(table, df)
