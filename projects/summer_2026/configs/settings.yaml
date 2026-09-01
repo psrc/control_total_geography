@@ -28,14 +28,9 @@ nat_resource_county_map: # maps control id to the natural resource areas by coun
   '053': 303
   '061': 304
 
-# list of rural control ids that should not have transit buffers applied, in addition to
-# the natural resource and tribal areas
-rural_control_ids: 
-  - 64 # King rural
-  - 76 # Kitsap rural
-  - 124 # Pierce rural
-  - 176 # Snohomish rural
-  - 403 # JBLM - Rural
+non_hct_manual_override: # control_ids that should not have HCT buffers applied
+# note: only rgid of 1, 2, or 3 are considered for HCT buffers
+  - 401 # NBK Bremerton
 
 
 #----------------------------
@@ -149,7 +144,7 @@ steps:
   # - steps.create_control_geography # creates control geography and saves to pipeline
   # - steps.create_target_geography
   # - steps.create_cities_geography
-  # - steps.flag_hct_parcels
-  # - steps.save_hct_shp
+  - steps.flag_hct_parcels
+  - steps.save_hct_shp
   - steps.create_parcel_control_hct_xwalk
   - steps.write_outputs 
