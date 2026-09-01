@@ -4,6 +4,40 @@ import sqlalchemy
 import geopandas as gpd
 import pyodbc
 
+def _get_sql_server_driver():
+        """Returns the newest installed SQL Server ODBC driver name, preferring 18 then 17."""
+        installed = pyodbc.drivers()
+        for version in ('18', '17'):
+                driver = f'ODBC Driver {version} for SQL Server'
+                if driver in installed:
+                        return driver
+        raise RuntimeError(
+                'No supported SQL Server ODBC driver found. Install "ODBC Driver 17 for SQL Server" '
+                'or "ODBC Driver 18 for SQL Server".'
+        )
+
+def patch_psrcelmerpy_trust_server_certificate():
+        """Patch psrcelmerpy.Connection to trust the server certificate.
+
+        ODBC Driver 18 enforces certificate validation by default, which
+        psrcelmerpy's connection string does not account for, causing an
+        SSL Provider error against PSRC's SQL Server. This appends
+        TrustServerCertificate=yes to the connection string it builds.
+        """
+        import urllib
+        import psrcelmerpy.conn.connection as connection
+
+        def _create_engine(self):
+                conn_string = "DRIVER={}; SERVER={}; DATABASE={}; trusted_connection=yes; TrustServerCertificate=yes".format(
+                        _get_sql_server_driver(),
+                        self.server_name,
+                        self.database_name
+                        )
+                params = urllib.parse.quote_plus(conn_string)
+                self.engine = sqlalchemy.create_engine("mssql+pyodbc:///?odbc_connect=%s" % params)
+
+        connection.Connection._create_engine = _create_engine
+
 def read_from_elmer_geo(feature_class_name, cols, crs='epsg:2285'):
         """
         Returns the specified feature class as a geodataframe from ElmerGeo.
@@ -17,7 +51,8 @@ def read_from_elmer_geo(feature_class_name, cols, crs='epsg:2285'):
 
         crs: coordinate reference system
         """
-        conn_str = 'mssql+pyodbc://SQLserver/ElmerGeo?driver=ODBC+Driver+17+for+SQL+Server'
+        driver = _get_sql_server_driver().replace(' ', '+')
+        conn_str = f'mssql+pyodbc://SQLserver/ElmerGeo?driver={driver}&TrustServerCertificate=yes'
         engine = sqlalchemy.create_engine(conn_str)
         con=engine.connect()
         # converts cols list to string for sql query
@@ -34,7 +69,8 @@ def read_from_elmer_geo(feature_class_name, cols, crs='epsg:2285'):
         return gdf[cols]
 
 def read_from_elmer(table_name, columns):
-        conn_str = 'mssql+pyodbc://SQLserver/Elmer?driver=ODBC+Driver+17+for+SQL+Server'
+        driver = _get_sql_server_driver().replace(' ', '+')
+        conn_str = f'mssql+pyodbc://SQLserver/Elmer?driver={driver}&TrustServerCertificate=yes'
         engine = sqlalchemy.create_engine(conn_str)
         with engine.connect() as con:
                 cols_str = ', '.join(columns)

@@ -3,7 +3,6 @@ import yaml
 from pathlib import Path
 import os
 import geopandas as gpd
-from shapely.wkt import loads
 
 # pandas 3.0 defaults to pyarrow-backed string dtypes ("future.infer_string").
 # Parquet round-trips then hand geopandas ArrowDtype-backed string columns,
@@ -68,15 +67,19 @@ class Pipeline:
         return pd.read_parquet(self.get_table_path(table_name))
 
     def save_geodataframe(self, name, gdf):
-        gdf['geometry_wkt'] = gdf.geometry.to_wkt()
-        gdf_to_save = gdf.drop(columns=['geometry'])
-        self.save_table(name, gdf_to_save)
+        print(f"Saving table {name} to pipeline...")
+        # geopandas' parquet writer stores CRS in the file metadata, so it round-trips
+        # correctly instead of relying on a hardcoded default when reading it back.
+        gdf.to_parquet(self.get_table_path(name))
 
-    def get_geodataframe(self, name,crs='epsg:2285'):
-        df = self.get_table(name)
-        df['geometry'] = df['geometry_wkt'].apply(loads)
-        gdf = gpd.GeoDataFrame(df, geometry='geometry', crs=crs)
-        gdf = gdf.drop(columns=['geometry_wkt'])
+    def get_geodataframe(self, name, crs='epsg:2285'):
+        gdf = gpd.read_parquet(self.get_table_path(name))
+        # reproject (not just relabel) to the working CRS so buffer distances stay in feet
+        # regardless of the native CRS the source layer was stored in
+        if crs is not None and gdf.crs != crs:
+            gdf = gdf.to_crs(crs)
+        # repair invalid geometry to avoid GEOS TopologyExceptions in downstream overlay/dissolve ops
+        gdf['geometry'] = gdf['geometry'].make_valid()
         return gdf
     
     def convert_id_to_int64(self, table, df):
