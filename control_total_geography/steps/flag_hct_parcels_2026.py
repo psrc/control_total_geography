@@ -2,7 +2,6 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 from util import Pipeline
-import psrcelmerpy
 
 
 def points_in_polygon(points_gdf, polygons_gdf, col_name, buffer=0):
@@ -132,39 +131,36 @@ def flag_hct_parcels(pipeline, parcels):
     )
     return parcels, hct_buffers
 
-def get_rural_control_ids(pipeline):
-    rural_control_ids = pipeline.settings['rural_control_ids']
-    for key, value in pipeline.settings['tribal_areas_keep'].items():
-        rural_control_ids.append(value)
-    for key, value in pipeline.settings['nat_resource_county_map'].items():
-        rural_control_ids.append(value)
-    rural_control_ids = list(set(rural_control_ids))
-    return rural_control_ids
 
-def assign_ids(parcels, control_areas, rural_control_ids):
+def assign_ids(parcels, control_areas, non_hct_manual_override=None):
     """
     Assign control_id, control_hct_id, and subreg_id to parcels based on spatial join with control areas.
 
     args:
         parcels (GeoDataFrame): GeoDataFrame containing parcel geometries that are already joined with HCT data (including 'tod' column).
         control_areas (GeoDataFrame): GeoDataFrame containing control area geometries and control_id.
-        rural_control_ids (list): List of control_ids that are considered rural and should not have HCT buffers applied.
+        non_hct_manual_override (list, optional): List of control_ids that should not have HCT buffers applied regardless of rural status.
     returns:
         GeoDataFrame: Updated parcels GeoDataFrame with assigned control_id, control_hct_id, and subreg_id.
     """
 
-    parcels = parcels.sjoin(control_areas[["control_id", "geometry"]], how="left").drop(columns="index_right")
+    parcels = parcels.sjoin(control_areas[["control_id","rgid", "geometry"]], how="left").drop(columns="index_right")
     if parcels['control_id'].isna().any():
         missing = parcels.loc[parcels['control_id'].isna()].copy().drop(columns="control_id")
         parcels = parcels.loc[~parcels['control_id'].isna()].copy()
         missing = missing.sjoin_nearest(control_areas[["control_id", "geometry"]]).drop(columns="index_right")
         parcels = pd.concat([parcels, missing], ignore_index=True)
-
     parcels['control_id'] = parcels['control_id'].astype(int)
-    # 2nd check to ensure that parcels in rural control areas are set to TOD 0, some were still getting through
-    rural_mask = parcels['control_id'].isin(rural_control_ids)
-    print(f"Number of TOD=1 parcels in rural control areas: {rural_mask.sum()}. Setting these parcels to TOD=0.")
-    parcels.loc[rural_mask, 'tod'] = 0
+
+    # remove TOD designation for parcels that do not have rgid of 1, 2 or 3
+    non_tod_mask = ~parcels['rgid'].isin([1, 2, 3])
+    parcels.loc[non_tod_mask, 'tod'] = 0
+
+    # remove TOD designation for parcels that are in non-HCT manual override control IDs
+    if non_hct_manual_override is not None:
+        non_hct_mask = parcels['control_id'].isin(non_hct_manual_override)
+        parcels.loc[non_hct_mask, 'tod'] = 0
+
     parcels['control_hct_id'] = np.where(parcels['tod'] != 0, parcels['control_id'] + 1000, parcels['control_id'])
     parcels['subreg_id'] = parcels['control_hct_id']
     return parcels
@@ -199,8 +195,7 @@ def run_step(context):
     p = Pipeline(settings_path=context["configs_dir"])
     parcels = p.get_geodataframe("parcel_pts_current")
     
-    # Flag each parcel by geographic category: rural, urban center, and HCT buffer zones
-    parcels = flag_rural_parcels(p, parcels)
+    # Flag each parcel by geographic category: urban center, and HCT buffer zones
     parcels = flag_urban_center_parcels(p, parcels)
     parcels, hct_buffers = flag_hct_parcels(p, parcels)
     
@@ -216,15 +211,14 @@ def run_step(context):
     parcels["tod"] = np.where(parcels["crt"] == 1, 4, parcels["tod"])
     parcels["tod"] = np.where(parcels["mrt"] == 1, 4, parcels["tod"])      
     parcels["tod"] = np.where(parcels["lrt"] == 1, 4, parcels["tod"])         
-    #parcels["tod"] = np.where(parcels["rural"] == 1, 0, parcels["tod"])
 
 
     # Assign control area IDs to parcels based on spatial join with control area geometries.
     # Creates control_hct_id by adding 1000 to control_id for parcels in HCT zones, 
     # and subreg_id is set equal to control_hct_id.
     control_areas = p.get_geodataframe("control")
-    rural_control_ids = get_rural_control_ids(p)
-    parcels = assign_ids(parcels, control_areas, rural_control_ids)
+    non_hct_manual_override = p.settings.get("non_hct_manual_override")
+    parcels = assign_ids(parcels, control_areas, non_hct_manual_override)
     
     # Persist flagged parcels and HCT buffer geometries to the pipeline
     p.save_geodataframe("parcels_hct", parcels)
