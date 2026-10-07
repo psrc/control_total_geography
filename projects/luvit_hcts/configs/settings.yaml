@@ -4,7 +4,8 @@
 # specify full paths or relative paths from project root
 data_dir: data
 pipeline_dir: pipeline
-output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
+# output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
+output_dir: output
 
 
 #----------------------------
@@ -88,13 +89,13 @@ ElmerGeo: # database
    sql_table: NATIONAL_PARK
    columns: ['park_name']
 
-#  - name: hct_stops
-#    sql_table: hct_vision_pts
-#    columns: ['brt','commuter_r','light_rail','ferry', 'rural'] # binary columns for whether stop is that transit type  
+ - name: hct_stops
+   sql_table: hct_vision_pts
+   columns: ['brt','commuter_r','light_rail','ferry', 'rural'] # binary columns for whether stop is that transit type  
 
- - name: hct_stops_2026
-   sql_table: transit_stops_2050_rtp_2026
-   columns: ['vision_hct', 'vision_buffer', 'rural', 'bus','srt','lrt', 'mrt', 'crt', 'fry', 'pof', 'brt'] # binary columns for whether stop is that transit type    
+#  - name: hct_stops_2026
+#    sql_table: transit_stops_2050_rtp_2026
+#    columns: ['vision_hct', 'vision_buffer', 'rural', 'bus','srt','lrt', 'mrt', 'crt', 'fry', 'pof', 'brt'] # binary columns for whether stop is that transit type    
 
  - name: urban_centers
    sql_table: urban_centers
@@ -148,7 +149,7 @@ steps:
     - steps.create_control_geography # creates control geography and saves to pipeline
     - steps.create_target_geography
     - steps.create_cities_geography
-    - steps.flag_hct_parcels_2026
+    - steps.flag_hct_parcels
     - steps.save_hct_shp
     - steps.create_parcel_control_hct_xwalk
     - steps.write_outputs
