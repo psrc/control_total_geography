@@ -4,7 +4,8 @@
 # specify full paths or relative paths from project root
 data_dir: data
 pipeline_dir: pipeline
-output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies_test
+output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
+# output_dir: output
 
 
 #----------------------------
@@ -32,6 +33,13 @@ non_hct_manual_override: # control_ids that should not have HCT buffers applied
 # note: only rgid of 1, 2, or 3 are considered for HCT buffers
   - 401 # NBK Bremerton
 
+rural_control_ids: 
+  - 64 # King rural
+  - 76 # Kitsap rural
+  - 124 # Pierce rural
+  - 176 # Snohomish rural
+  
+trace_geography: 1138 # subreg_id to trace for debugging
 
 #----------------------------
 # Transit buffer settings
@@ -88,9 +96,9 @@ ElmerGeo: # database
    sql_table: NATIONAL_PARK
    columns: ['park_name']
 
- - name: hct_stops
-   sql_table: hct_vision_pts
-   columns: ['brt','commuter_r','light_rail','ferry', 'rural'] # binary columns for whether stop is that transit type  
+#  - name: hct_stops
+#    sql_table: hct_vision_pts
+#    columns: ['brt','commuter_r','light_rail','ferry', 'rural'] # binary columns for whether stop is that transit type  
 
  - name: hct_stops_2026
    sql_table: transit_stops_2050_rtp_2026
