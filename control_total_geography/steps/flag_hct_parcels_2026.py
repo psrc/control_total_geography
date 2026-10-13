@@ -132,6 +132,16 @@ def flag_hct_parcels(pipeline, parcels):
     return parcels, hct_buffers
 
 
+def get_rural_control_ids(pipeline):
+    rural_control_ids = pipeline.settings['rural_control_ids']
+    for key, value in pipeline.settings['tribal_areas_keep'].items():
+        rural_control_ids.append(value)
+    for key, value in pipeline.settings['nat_resource_county_map'].items():
+        rural_control_ids.append(value)
+    rural_control_ids = list(set(rural_control_ids))
+    return rural_control_ids
+
+
 def assign_ids(parcels, control_areas, rural_control_ids, non_hct_manual_override=None):
     """
     Assign control_id, control_hct_id, and subreg_id to parcels based on spatial join with control areas.
@@ -201,6 +211,7 @@ def run_step(context):
     parcels = p.get_geodataframe("parcel_pts_current")
     
     # Flag each parcel by geographic category: urban center, and HCT buffer zones
+    parcels = flag_rural_parcels(p, parcels)
     parcels = flag_urban_center_parcels(p, parcels)
     parcels, hct_buffers = flag_hct_parcels(p, parcels)
     
@@ -226,6 +237,7 @@ def run_step(context):
     non_hct_manual_override = p.settings.get('non_hct_manual_override', None)
     parcels = assign_ids(parcels, control_areas, rural_control_ids, non_hct_manual_override)
 
+    # print trace geography parcel counts for debugging
     trace_geog = p.settings['trace_geography']
     if trace_geog:
         print(f"Number of parcels in subreg {trace_geog}: {len(parcels.loc[(parcels['subreg_id'] == trace_geog)])}")

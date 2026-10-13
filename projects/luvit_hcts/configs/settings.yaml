@@ -4,8 +4,8 @@
 # specify full paths or relative paths from project root
 data_dir: data
 pipeline_dir: pipeline
-# output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
-output_dir: output
+output_dir: Q:/Projects/2023_Baseyear/Political/control_geog_old_hcts
+# output_dir: output
 
 
 #----------------------------
@@ -33,6 +33,13 @@ non_hct_manual_override: # control_ids that should not have HCT buffers applied
 # note: only rgid of 1, 2, or 3 are considered for HCT buffers
   - 401 # NBK Bremerton
 
+rural_control_ids: 
+  - 64 # King rural
+  - 76 # Kitsap rural
+  - 124 # Pierce rural
+  - 176 # Snohomish rural
+  
+trace_geography: 1138 # subreg_id to trace for debugging
 
 #----------------------------
 # Transit buffer settings
@@ -144,12 +151,12 @@ output_tables: # tables to be saved to output folder
 # Pypyr pipeline steps
 #----------------------------
 steps:
-    - steps.load_data # loads data from csv files to pipeline
-    - steps.get_elmer_data # pulls data from Elmer and saves to pipeline
-    - steps.create_control_geography # creates control geography and saves to pipeline
-    - steps.create_target_geography
-    - steps.create_cities_geography
-    - steps.flag_hct_parcels
-    - steps.save_hct_shp
-    - steps.create_parcel_control_hct_xwalk
-    - steps.write_outputs
+  - steps.load_data # loads data from csv files to pipeline
+  - steps.get_elmer_data # pulls data from Elmer and saves to pipeline
+  - steps.create_control_geography # creates control geography and saves to pipeline
+  - steps.create_target_geography
+  - steps.create_cities_geography
+  - steps.flag_hct_parcels
+  - steps.save_hct_shp
+  - steps.create_parcel_control_hct_xwalk
+  - steps.write_outputs

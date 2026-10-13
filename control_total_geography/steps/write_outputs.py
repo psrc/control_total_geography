@@ -1,9 +1,11 @@
+import pandas as pd
 from control_total_geography.util import Pipeline
 
 def run_step(context):
     # pypyr step
     p = Pipeline(settings_path=context['configs_dir'])
-    print("Saving outputs from HDF5 to disk...")
+    print("Saving outputs from pipeline to disk...")
+    today = pd.Timestamp.today().strftime("%Y-%m-%d")
     output_dir = p.get_output_path()
     output_layers = p.settings.get('output_layers', [])
     output_geodatabase = p.settings.get('output_geodatabase', 'control.gdb')
@@ -14,7 +16,7 @@ def run_step(context):
         for layer in output_layers:
             gdf = p.get_geodataframe(layer)
             if gdf is not None:
-                layer_name = f"{layer}{layer_year_suffix}"
+                layer_name = f"{layer}{layer_year_suffix}_{today}"
                 print(f"Saving {layer_name} to {output_dir / output_geodatabase}...")
                 gdf.to_file(output_dir / output_geodatabase, layer=layer_name, driver='OpenFileGDB', promote_to_multi=True)
             else:
@@ -23,7 +25,7 @@ def run_step(context):
         df = p.get_table(table)
         if df is not None:
             print(f"Saving {table} to {output_dir / (table + '.csv')}...")
-            df.to_csv(output_dir / (table + '.csv'), index=False)
+            df.to_csv(output_dir / (table + f'_{today}.csv'), index=False)
         else:
             print(f"Warning: No tabular data found for table '{table}' in HDF5 store.")
     return context

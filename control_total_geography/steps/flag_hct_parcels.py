@@ -212,6 +212,11 @@ def run_step(context):
     control_areas = p.get_geodataframe("control")
     non_hct_manual_override = p.settings.get("non_hct_manual_override")
     parcels = assign_ids(parcels, control_areas, non_hct_manual_override)
+
+    # print trace geography parcel counts for debugging
+    trace_geog = p.settings['trace_geography']
+    if trace_geog:
+        print(f"Number of parcels in subreg {trace_geog}: {len(parcels.loc[(parcels['subreg_id'] == trace_geog)])}")
     
     # Persist flagged parcels and HCT buffer geometries to the pipeline
     p.save_geodataframe("parcels_hct", parcels)
