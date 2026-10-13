@@ -4,8 +4,8 @@
 # specify full paths or relative paths from project root
 data_dir: data
 pipeline_dir: pipeline
-output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
-# output_dir: output
+# output_dir: Q:/Projects/2023_Baseyear/Political/control_geographies
+output_dir: output
 
 
 #----------------------------
@@ -145,6 +145,7 @@ output_layers: # layers to be saved to output geodatabase
 output_tables: # tables to be saved to output folder
  - parcels_control_hct_xwalk # very slow
  - parcels_cities # very slow
+ - parcel_counts
 
 
 #----------------------------

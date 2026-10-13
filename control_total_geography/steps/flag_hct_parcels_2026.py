@@ -157,9 +157,9 @@ def assign_ids(parcels, control_areas, rural_control_ids, non_hct_manual_overrid
 
     parcels = parcels.sjoin(control_areas[["control_id","rgid", "geometry"]], how="left").drop(columns="index_right")
     if parcels['control_id'].isna().any():
-        missing = parcels.loc[parcels['control_id'].isna()].copy().drop(columns="control_id")
+        missing = parcels.loc[parcels['control_id'].isna()].copy().drop(columns=["control_id", "rgid"])
         parcels = parcels.loc[~parcels['control_id'].isna()].copy()
-        missing = missing.sjoin_nearest(control_areas[["control_id", "geometry"]]).drop(columns="index_right")
+        missing = missing.sjoin_nearest(control_areas[["control_id", "rgid", "geometry"]]).drop(columns="index_right")
         parcels = pd.concat([parcels, missing], ignore_index=True)
     parcels['control_id'] = parcels['control_id'].astype(int)
     # 2nd check to ensure that parcels in rural control areas are set to TOD 0, some were still getting through
@@ -168,15 +168,17 @@ def assign_ids(parcels, control_areas, rural_control_ids, non_hct_manual_overrid
     parcels.loc[rural_mask, 'tod'] = 0
     
     # remove TOD designation for parcels that do not have rgid of 1, 2 or 3
+    parcels['rgid'] = parcels['rgid'].astype(int)
     non_tod_mask = ~parcels['rgid'].isin([1, 2, 3])
     parcels.loc[non_tod_mask, 'tod'] = 0
+
 
     # remove TOD designation for parcels that are in non-HCT manual override control IDs
     if non_hct_manual_override is not None:
         non_hct_mask = parcels['control_id'].isin(non_hct_manual_override)
         parcels.loc[non_hct_mask, 'tod'] = 0
     
-    parcels['control_hct_id'] = np.where(parcels['tod'] != 0, parcels['control_id'] + 1000, parcels['control_id'])
+    parcels['control_hct_id'] = np.where(parcels['tod'] != 0, parcels['control_id'] + 1000, parcels['control_id']).astype(int)
     parcels['subreg_id'] = parcels['control_hct_id']
     return parcels
 
@@ -241,7 +243,20 @@ def run_step(context):
     trace_geog = p.settings['trace_geography']
     if trace_geog:
         print(f"Number of parcels in subreg {trace_geog}: {len(parcels.loc[(parcels['subreg_id'] == trace_geog)])}")
-    
+
+    # print number of control hct areas
+    print(f"Number of control HCT areas: {parcels['subreg_id'].nunique()}")
+
+    # export parcel counts for validation
+    parcel_counts = parcels.groupby('subreg_id').size().reset_index(name='parcel_count')
+    p.save_table('parcel_counts', parcel_counts)
+
+    # raise an error if there are parcels with missing subreg_ids or rgids
+    if parcels['subreg_id'].isna().any():
+        raise ValueError("Parcels with missing subreg_id")
+    if parcels['rgid'].isna().any():
+        raise ValueError("Parcels with missing rgid")
+
     # Persist flagged parcels and HCT buffer geometries to the pipeline
     p.save_geodataframe("parcels_hct", parcels)
     p.save_geodataframe("hct_buffers", hct_buffers)

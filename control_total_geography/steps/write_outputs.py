@@ -24,8 +24,9 @@ def run_step(context):
     for table in p.settings.get('output_tables', []):
         df = p.get_table(table)
         if df is not None:
-            print(f"Saving {table} to {output_dir / (table + '.csv')}...")
-            df.to_csv(output_dir / (table + f'_{today}.csv'), index=False)
+            out_path = output_dir / (table + f'_{today}.csv')
+            print(f"Saving {table} to {out_path}...")
+            df.to_csv(out_path, index=False)
         else:
             print(f"Warning: No tabular data found for table '{table}' in HDF5 store.")
     return context
